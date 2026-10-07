@@ -1,0 +1,30 @@
+---
+# Redis role defaults (overridable).
+
+# --- Network / binding ---
+redis_port: 6379
+redis_bind: "0.0.0.0"
+redis_protected_mode: "no"
+
+# --- General ---
+redis_loglevel: "notice"
+redis_logfile: ""          # "" -> log to stdout (captured by journald)
+redis_databases: 16
+
+# --- Persistence ---
+redis_appendonly: "yes"
+redis_appendfsync: "everysec"
+
+# --- Memory (VMs have ~2 GB RAM) ---
+redis_maxmemory: "512mb"
+redis_maxmemory_policy: "noeviction"
+
+# --- Replication topology (2 nodes -> master-replica) ---
+redis_master_name: "redis-1"        # inventory_hostname of the master
+redis_master_host: "192.168.1.237"  # IP of the master
+
+# requirepass / masterauth value.
+# NOT hardcoded here: it is injected from group_vars/redis/vault.yml
+# (ansible-vault encrypted) under the key `vault_redis_password`.
+# See roles/redis/README.md for the documented value.
+redis_password: "{{ vault_redis_password }}"

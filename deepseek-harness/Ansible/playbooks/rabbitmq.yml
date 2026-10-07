@@ -1,0 +1,7 @@
+---
+- name: Deploy RabbitMQ cluster
+  hosts: rabbitmq
+  gather_facts: true
+  become: true
+  roles:
+    - rabbitmq

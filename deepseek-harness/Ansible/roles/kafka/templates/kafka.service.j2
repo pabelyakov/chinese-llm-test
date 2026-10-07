@@ -1,0 +1,22 @@
+[Unit]
+Description=Apache Kafka broker (KRaft)
+Documentation=https://kafka.apache.org/documentation/
+Requires=network.target
+After=network.target
+
+[Service]
+Type=simple
+User={{ kafka_user }}
+Group={{ kafka_group }}
+Environment=LOG_DIR={{ kafka_log_dir }}
+Environment="KAFKA_HEAP_OPTS={{ kafka_heap_opts }}"
+ExecStart={{ kafka_home }}/bin/kafka-server-start.sh {{ kafka_config_dir }}/server.properties
+ExecStop={{ kafka_home }}/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+TimeoutStopSec=120
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

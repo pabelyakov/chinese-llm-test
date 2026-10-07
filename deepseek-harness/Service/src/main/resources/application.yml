@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: pipeline-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:192.168.1.230:9092,192.168.1.231:9092,192.168.1.232:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: ${KAFKA_GROUP_ID:pipeline-service}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.1.233}
+    port: ${RABBITMQ_PORT:5672}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    username: ${RABBITMQ_USER:service}
+    password: ${RABBITMQ_PASSWORD:service-pass}
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.1.237}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis-pass}
+
+pipeline:
+  kafka:
+    topic: ${KAFKA_TOPIC:input-topic}
+  rabbitmq:
+    exchange: ${RABBITMQ_EXCHANGE:pipeline.exchange}
+    queue: ${RABBITMQ_QUEUE:pipeline.queue}
+    routing-key: ${RABBITMQ_ROUTING_KEY:pipeline.routing}
+  redis:
+    key-prefix: ${REDIS_KEY_PREFIX:pipeline:}
+    ttl-seconds: ${REDIS_TTL_SECONDS:300}
+  timeouts:
+    kafka-send-seconds: ${KAFKA_SEND_TIMEOUT_SECONDS:10}
+    pipeline-seconds: ${PIPELINE_TIMEOUT_SECONDS:30}

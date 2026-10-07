@@ -1,0 +1,14 @@
+---
+# Role-internal constants (not intended to be overridden).
+
+# Official Redis APT repository (packages.redis.io) - provides current stable.
+redis_apt_repo_url: "https://packages.redis.io/deb"
+redis_apt_repo_gpg_url: "https://packages.redis.io/gpg"
+redis_apt_keyring_path: "/usr/share/keyrings/redis-archive-keyring.gpg"
+redis_apt_list_file: "redis"
+
+# Paths / service.
+redis_config_file: "/etc/redis/redis.conf"
+redis_data_dir: "/var/lib/redis"
+redis_pidfile: "/run/redis/redis-server.pid"
+redis_service_name: "redis-server"

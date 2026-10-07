@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: rabbitmq
+  author: deepseek-harness
+  description: Deploys a 3-node RabbitMQ cluster on Ubuntu 22.04
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+  galaxy_tags:
+    - rabbitmq
+    - messaging
+    - clustering
+
+allow_duplicates: false
+dependencies: []

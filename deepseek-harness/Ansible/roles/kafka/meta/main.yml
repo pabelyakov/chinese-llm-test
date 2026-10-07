@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: kafka
+  namespace: deepseek_harness
+  author: deepseek-harness
+  description: Deploy an Apache Kafka 3.x cluster in KRaft mode (no ZooKeeper) on Ubuntu 22.04
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+  galaxy_tags:
+    - kafka
+    - kraft
+    - messaging
+    - streaming
+
+dependencies: []

@@ -1,0 +1,11 @@
+# Secrets - never commit
+terraform.tfvars
+
+# Local Terraform state
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+
+# Provider plugins / working dir
+.terraform/
+crash.log

@@ -1,0 +1,7 @@
+---
+- name: Deploy Redis master-replica
+  hosts: redis
+  become: true
+  gather_facts: true
+  roles:
+    - role: redis

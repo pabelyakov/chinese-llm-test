@@ -1,0 +1,139 @@
+---
+- name: Update apt cache and install prerequisites
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+    state: present
+    update_cache: true
+
+- name: Download RabbitMQ signing key
+  ansible.builtin.get_url:
+    url: "{{ rabbitmq_signing_key_url }}"
+    dest: /tmp/rabbitmq-signing-key.asc
+    mode: "0644"
+
+- name: Install RabbitMQ signing key into keyring
+  ansible.builtin.command:
+    cmd: gpg --dearmor -o {{ rabbitmq_apt_keyring_path }} /tmp/rabbitmq-signing-key.asc
+    creates: "{{ rabbitmq_apt_keyring_path }}"
+
+- name: Configure RabbitMQ apt repositories
+  ansible.builtin.template:
+    src: rabbitmq.list.j2
+    dest: /etc/apt/sources.list.d/rabbitmq.list
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+  changed_when: false
+
+- name: Install Erlang and RabbitMQ server
+  ansible.builtin.apt:
+    name: "{{ rabbitmq_erlang_packages + ['rabbitmq-server'] }}"
+    state: present
+
+- name: Configure /etc/hosts for cluster name resolution
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure RabbitMQ node name
+  ansible.builtin.template:
+    src: rabbitmq-env.conf.j2
+    dest: /etc/rabbitmq/rabbitmq-env.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart RabbitMQ
+
+- name: Configure RabbitMQ
+  ansible.builtin.template:
+    src: rabbitmq.conf.j2
+    dest: /etc/rabbitmq/rabbitmq.conf
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0644"
+  notify: Restart RabbitMQ
+
+- name: Set shared Erlang cookie
+  ansible.builtin.copy:
+    dest: /var/lib/rabbitmq/.erlang.cookie
+    content: "{{ rabbitmq_erlang_cookie }}"
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0400"
+  notify: Restart RabbitMQ
+
+- name: Enable management plugin
+  ansible.builtin.copy:
+    dest: /etc/rabbitmq/enabled_plugins
+    content: "[rabbitmq_management].\n"
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0644"
+  notify: Restart RabbitMQ
+
+- name: Flush handlers to restart RabbitMQ with final configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure RabbitMQ service is enabled and running
+  ansible.builtin.systemd:
+    name: rabbitmq-server
+    state: started
+    enabled: true
+
+- name: Wait for RabbitMQ node to become responsive
+  ansible.builtin.command: rabbitmq-diagnostics -q ping
+  register: _rabbitmq_ping
+  until: _rabbitmq_ping.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Read cluster status
+  ansible.builtin.command: rabbitmqctl cluster_status --formatter json
+  register: _rabbitmq_cluster_status
+  changed_when: false
+  when: inventory_hostname != rabbitmq_master_node
+
+- name: Join RabbitMQ cluster
+  when:
+    - inventory_hostname != rabbitmq_master_node
+    - rabbitmq_master_nodename not in (_rabbitmq_cluster_status.stdout | from_json)['running_nodes']
+  block:
+    - name: Stop RabbitMQ application
+      ansible.builtin.command: rabbitmqctl stop_app
+
+    - name: Join cluster
+      ansible.builtin.command: "rabbitmqctl join_cluster {{ rabbitmq_master_nodename }}"
+
+    - name: Start RabbitMQ application
+      ansible.builtin.command: rabbitmqctl start_app
+
+- name: Ensure service vhost exists
+  community.rabbitmq.rabbitmq_vhost:
+    name: "{{ rabbitmq_vhost }}"
+    state: present
+    node: "{{ rabbitmq_nodename }}"
+  when: inventory_hostname == rabbitmq_master_node
+
+- name: Ensure service user exists with permissions
+  community.rabbitmq.rabbitmq_user:
+    user: "{{ rabbitmq_user }}"
+    password: "{{ rabbitmq_password }}"
+    vhost: "{{ rabbitmq_vhost }}"
+    configure_priv: ".*"
+    read_priv: ".*"
+    write_priv: ".*"
+    tags: "{{ rabbitmq_user_tags }}"
+    state: present
+    node: "{{ rabbitmq_nodename }}"
+  when: inventory_hostname == rabbitmq_master_node

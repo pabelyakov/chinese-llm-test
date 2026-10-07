@@ -1,0 +1,4 @@
+com/example/pipeline/model/PipelineMessageTest.class
+com/example/pipeline/pipeline/PipelineServiceTest.class
+com/example/pipeline/pipeline/RabbitPipelineListenerTest.class
+com/example/pipeline/pipeline/KafkaPipelineListenerTest.class

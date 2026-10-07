@@ -1,0 +1,21 @@
+# Example: copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored - never commit secrets.
+
+pm_api_url        = "https://192.168.1.253:8006/"
+pm_api_token_id   = "root@pam!terraform"
+pm_api_token_secret = "CHANGE_ME"
+
+# Optional overrides (defaults are shown):
+# pm_node_name        = "prox-01"
+# pm_datastore_id     = "storage"
+# pm_bridge           = "vmbr0"
+# network_gateway     = "192.168.1.1"
+# network_dns_server  = "192.168.1.1"
+# network_dns_domain  = "t3adog.ru"
+# vm_cpu_cores        = 2
+# vm_memory_mb        = 2048
+# vm_disk_size_gb     = 40
+
+# ssh_public_key is read from ../Security/id_ed25519.pub by default.
+# To override, set:
+# ssh_public_key = "ssh-ed25519 AAAA... comment"

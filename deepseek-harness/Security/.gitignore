@@ -1,0 +1,10 @@
+# Игнорировать приватные SSH-ключи
+id_ed25519
+id_rsa
+id_ecdsa
+id_dsa
+*.pem
+!id_ed25519.pub
+!id_rsa.pub
+!id_ecdsa.pub
+!id_dsa.pub

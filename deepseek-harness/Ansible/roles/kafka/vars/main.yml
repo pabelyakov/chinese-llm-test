@@ -1,0 +1,3 @@
+---
+jdk_packages:
+  - openjdk-17-jdk-headless

@@ -1,0 +1,93 @@
+# {{ ansible_managed }}
+# Redis configuration for {{ inventory_hostname }} (managed by role `redis`)
+
+{% set is_master = (inventory_hostname == redis_master_name) %}
+
+################################ NETWORK ################################
+bind {{ redis_bind }} -::1
+protected-mode {{ redis_protected_mode }}
+port {{ redis_port }}
+tcp-backlog 511
+timeout 0
+tcp-keepalive 300
+
+################################# GENERAL #################################
+daemonize no
+supervised systemd
+pidfile {{ redis_pidfile }}
+loglevel {{ redis_loglevel }}
+logfile "{{ redis_logfile }}"
+databases {{ redis_databases }}
+
+############################### SNAPSHOTTING ###############################
+save 900 1
+save 300 10
+save 60 10000
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename dump.rdb
+dir {{ redis_data_dir }}
+
+################################# REPLICATION #################################
+{% if is_master %}
+# This host is the MASTER: no replicaof configured.
+{% else %}
+replicaof {{ redis_master_host }} {{ redis_port }}
+{% endif %}
+masterauth {{ redis_password }}
+replica-serve-stale-data yes
+replica-read-only yes
+repl-diskless-sync yes
+repl-diskless-sync-delay 5
+repl-ping-replica-period 10
+repl-timeout 60
+repl-disable-tcp-nodelay no
+repl-backlog-size 1mb
+repl-backlog-ttl 3600
+replica-priority 100
+min-replicas-to-write 0
+min-replicas-max-lag 10
+
+################################## SECURITY ###################################
+requirepass {{ redis_password }}
+# (masterauth above is used by the replica to authenticate to the master)
+
+############################## APPEND ONLY MODE ###############################
+appendonly {{ redis_appendonly }}
+appendfilename "appendonly.aof"
+appenddirname "appendonlydir"
+appendfsync {{ redis_appendfsync }}
+no-appendfsync-on-rewrite no
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
+aof-load-truncated yes
+aof-use-rdb-preamble yes
+aof-timestamp-enabled no
+
+################################ LUA SCRIPTING ################################
+lua-time-limit 5000
+
+################################## MEMORY ##################################
+maxmemory {{ redis_maxmemory }}
+maxmemory-policy {{ redis_maxmemory_policy }}
+
+############################### ADVANCED CONFIG ###############################
+hash-max-listpack-entries 512
+hash-max-listpack-value 64
+list-max-listpack-size -2
+list-compress-depth 0
+set-max-intset-entries 512
+zset-max-listpack-entries 128
+zset-max-listpack-value 64
+hll-sparse-max-bytes 3000
+stream-node-max-bytes 4096
+stream-node-max-entries 100
+activerehashing yes
+client-output-buffer-limit normal 0 0 0
+client-output-buffer-limit replica 256mb 64mb 60
+client-output-buffer-limit pubsub 32mb 8mb 60
+hz 10
+dynamic-hz yes
+aof-rewrite-incremental-fsync yes
+rdb-save-incremental-fsync yes

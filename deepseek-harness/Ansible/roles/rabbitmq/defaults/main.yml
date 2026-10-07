@@ -1,0 +1,11 @@
+---
+rabbitmq_user: "service"
+rabbitmq_password: "service-pass"
+rabbitmq_vhost: "/"
+rabbitmq_user_tags: "management"
+
+rabbitmq_erlang_cookie: "deepseek-harness-rabbitmq-erlang-cookie"
+
+rabbitmq_distribution: "jammy"
+rabbitmq_signing_key_url: "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA"
+rabbitmq_apt_keyring_path: "/usr/share/keyrings/com.rabbitmq.team.gpg"

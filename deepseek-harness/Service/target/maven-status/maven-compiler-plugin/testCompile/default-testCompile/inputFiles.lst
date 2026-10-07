@@ -1,0 +1,4 @@
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/test/java/com/example/pipeline/model/PipelineMessageTest.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/test/java/com/example/pipeline/pipeline/KafkaPipelineListenerTest.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/test/java/com/example/pipeline/pipeline/PipelineServiceTest.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/test/java/com/example/pipeline/pipeline/RabbitPipelineListenerTest.java

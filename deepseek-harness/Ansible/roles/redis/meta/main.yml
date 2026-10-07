@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: redis
+  namespace: deepseek_harness
+  author: deepseek-harness
+  description: Deploy Redis (master-replica) on Ubuntu 22.04
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+  galaxy_tags:
+    - redis
+    - replication
+    - cache
+
+dependencies: []

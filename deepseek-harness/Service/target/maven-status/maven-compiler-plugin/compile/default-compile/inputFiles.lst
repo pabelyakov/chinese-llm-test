@@ -1,0 +1,12 @@
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/PipelineApplication.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/config/RabbitMqConfig.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/controller/GlobalExceptionHandler.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/controller/PipelineController.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/model/PipelineMessage.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/model/Stage.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/model/StartRequest.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/pipeline/CorrelationRegistry.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/pipeline/KafkaPipelineListener.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/pipeline/PipelineService.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/pipeline/PipelineTimeoutException.java
+/Users/pabelyakov/Projects/llm-test/deepseek-harness/Service/src/main/java/com/example/pipeline/pipeline/RabbitPipelineListener.java

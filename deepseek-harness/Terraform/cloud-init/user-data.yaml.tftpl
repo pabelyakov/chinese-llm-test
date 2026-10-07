@@ -1,0 +1,30 @@
+# Reference cloud-init user-data template.
+#
+# NOTE: The deployment actually uses the native `initialization` block in
+# main.tf (user_account / ip_config / dns), which makes Proxmox generate an
+# equivalent cloud-init drive without requiring SSH to the PVE node.
+#
+# This template is the equivalent cloud-config and can be used as an
+# alternative via the snippet approach (proxmox_virtual_environment_file +
+# initialization.user_data_file_id), which additionally requires SSH access
+# to the Proxmox node.
+
+#cloud-config
+hostname: ${hostname}
+manage_etc_hosts: true
+fqdn: ${hostname}.${dns_domain}
+
+users:
+  - name: ubuntu
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+ssh_pwauth: false
+disable_root: true
+
+package_update: true
+package_upgrade: false

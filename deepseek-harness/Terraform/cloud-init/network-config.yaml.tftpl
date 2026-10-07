@@ -1,0 +1,22 @@
+# Reference cloud-init network-config (v2) template.
+#
+# NOTE: The deployment actually uses the native `initialization.ip_config`
+# block in main.tf, which makes Proxmox generate the network config for the
+# actual NIC (no SSH to PVE node required). This template is the equivalent
+# netplan-style config and can be used via the snippet approach
+# (initialization.network_data_file_id) if SSH access to the node is available.
+
+version: 2
+ethernets:
+  id0:
+    match:
+      name: "en*"
+    dhcp4: false
+    addresses:
+      - ${ip}/24
+    gateway4: ${gateway}
+    nameservers:
+      addresses:
+        - ${dns_server}
+      search:
+        - ${dns_domain}

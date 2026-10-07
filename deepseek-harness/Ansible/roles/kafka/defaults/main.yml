@@ -1,0 +1,66 @@
+---
+# Apache Kafka version (KRaft-supported 3.x)
+kafka_version: "3.9.1"
+kafka_scala_version: "2.13"
+kafka_release_name: "kafka_{{ kafka_scala_version }}-{{ kafka_version }}"
+kafka_archive: "{{ kafka_release_name }}.tgz"
+kafka_download_url: "https://archive.apache.org/dist/kafka/{{ kafka_version }}/{{ kafka_archive }}"
+kafka_sha512: "1EA204BA73411737A275429CA976D440F007FF0957B90B19BE41DC5A4BAE52617267769BE9F0B5791714D0B3C4C760605BD426FAEA39EDD90763585523FA2CFE"
+
+# Local (control node) cache for the Kafka tarball so it is downloaded once
+# and copied to every host instead of three slow parallel downloads.
+kafka_local_cache_dir: "{{ playbook_dir }}/../.kafka-cache"
+
+# OS user/group and paths
+kafka_user: kafka
+kafka_group: kafka
+kafka_install_dir: /opt
+kafka_release_dir: "{{ kafka_install_dir }}/{{ kafka_release_name }}"
+kafka_home: "{{ kafka_install_dir }}/kafka"
+kafka_data_dir: /var/lib/kafka
+kafka_log_dir: /var/log/kafka
+kafka_config_dir: /etc/kafka
+
+# Network
+kafka_port: 9092
+kafka_controller_port: 9093
+
+# KRaft cluster id: a single random UUID shared by every node in the cluster.
+# It is NOT a secret (it is stored in plaintext in meta.properties on disk);
+# generated once and kept stable so repeated runs / added nodes stay consistent.
+kafka_cluster_id: "8475340e-8501-44a5-8fa5-6112797476e3"
+
+# JVM heap for the broker (VMs have ~2 GB RAM, keep the heap modest)
+kafka_heap_opts: "-Xmx512M -Xms512M"
+
+# KRaft controller quorum timeouts (raised for slow virtualized storage)
+kafka_controller_quorum_fetch_timeout_ms: 30000
+kafka_controller_quorum_election_timeout_ms: 30000
+kafka_controller_quorum_election_backoff_max_ms: 15000
+kafka_controller_quorum_append_linger_ms: 50
+
+# Broker heartbeat / session timeouts (raised so brokers are not evicted)
+kafka_broker_session_timeout_ms: 30000
+kafka_broker_heartbeat_interval_ms: 10000
+
+# Replica lag tolerance (raised for slow virtualized storage so followers stay in ISR)
+kafka_replica_lag_time_max_ms: 60000
+
+# Topic / replication defaults
+kafka_num_partitions: 3
+kafka_default_replication_factor: 3
+kafka_min_insync_replicas: 2
+kafka_offsets_topic_replication_factor: 3
+kafka_transaction_state_log_replication_factor: 3
+kafka_transaction_state_log_min_isr: 2
+kafka_auto_create_topics: "true"
+kafka_group_initial_rebalance_delay_ms: 0
+kafka_log_retention_hours: 168
+kafka_log_segment_bytes: 1073741824
+kafka_log_retention_check_interval_ms: 300000
+
+# hostname -> node.id mapping (must match inventory group `kafka`)
+kafka_nodes:
+  kafka-1: 1
+  kafka-2: 2
+  kafka-3: 3

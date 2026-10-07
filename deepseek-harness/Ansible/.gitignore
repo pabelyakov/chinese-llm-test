@@ -1,0 +1,12 @@
+# Vault password file - never commit
+.vault_pass
+
+# Plaintext vault leftovers - never commit
+*.plain
+group_vars/**/vault.yml.plain
+
+# Ansible retry files
+*.retry
+
+# Kafka tarball download cache (control node)
+.kafka-cache/
