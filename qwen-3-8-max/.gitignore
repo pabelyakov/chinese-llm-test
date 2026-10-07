@@ -1,0 +1,88 @@
+# =========================================================================
+# .gitignore — политика исключения секретов и артефактов сборки (Agent 1)
+# Правило: в git НЕ попадает ни один приватный ключ, токен, пароль,
+# tfvars/tfstate и собранный бинарник. Публичные ключи и *.example — можно.
+# =========================================================================
+
+# --- SSH-ключи (Security/) -------------------------------------------------
+Security/id_ed25519
+Security/id_ed25519.ppk
+Security/id_rsa
+Security/id_ecdsa
+Security/*.pem
+Security/*.key
+Security/*.p12
+Security/*.pfx
+Security/authorized_keys
+# реальный env с токеном Proxmox (пример — НЕ секрет, его коммитим)
+Security/proxmox.env
+Security/*.env
+!Security/*.env.example
+!Security/*.pub
+!Security/README.md
+
+# --- Terraform: переменные и состояние ------------------------------------
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+Terraform/*.tfvars
+Terraform/*.tfvars.json
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+Terraform/tfplan
+Terraform/*.plan
+.terraform/
+.terraform.lock.hcl.bak
+crash.log
+crash.*.log
+Terraform/ssh_keys/
+Terraform/*.pem
+
+# --- Ansible: секреты, vault, кэш, inventory локальный ---------------------
+Ansible/secrets/
+Ansible/**/secrets/
+Ansible/**/*.vault
+Ansible/**/vault.yml
+Ansible/**/vault.yaml
+Ansible/credentials*.yml
+Ansible/credentials*.yaml
+Ansible/group_vars/**/credentials*.yml
+Ansible/inventory/*.local
+Ansible/inventory/hosts.local
+Ansible/*.retry
+Ansible/ansible.log
+
+# --- Java / Spring Boot (Service/) ----------------------------------------
+Service/target/
+Service/**/target/
+Service/.mvn/wrapper/maven-wrapper.jar
+Service/build/
+Service/*.jar
+Service/*.war
+!Service/.mvn/wrapper/maven-wrapper.jar
+
+# --- Переменные окружения приложения --------------------------------------
+.env
+.env.*
+!.env.example
+*.env.local
+
+# --- ВХОДНЫЕ ПРОМТЫ: в promts/shared-context.md лежит РЕАЛЬНЫЙ токен Proxmox ---
+# Исключено, чтобы секрет не уехал в историю git (политики P1/D7).
+# После вычистки токена из файла правило можно снять (или заменить токен в Proxmox).
+promts/shared-context.md
+
+# --- Логи, временные файлы, ОС/IDE мусор ----------------------------------
+*.log
+logs/
+tmp/
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,89 @@
+---
+# Ansible/group_vars/all.yml — общие переменные всех узлов kimi-lab.
+#
+# Создан Agent 2 (Terraform/Proxmox), 2026-10-07. Файл НЕ управляется
+# Terraform (осознанно: Terraform владеет только inventory/hosts.yml) —
+# Agent 3/4 могут свободно дополнять его переменными ролей.
+#
+# Источники фактов: docs/INFRA.md (IPAM/порты/лимиты), подтверждение D6 —
+# Terraform/README.md и docs/ENDPOINTS.md §2 (node/storage/bridge/gateway
+# проверены через Proxmox API).
+
+# --- Подключение (SSH) -------------------------------------------------------
+ansible_user: ubuntu
+ansible_ssh_private_key_file: /Users/pabelyakov/Projects/llm-test/kimi/Security/id_ed25519
+# первый ключ ещё не в known_hosts — принимаем автоматически (TOFU)
+ansible_ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+
+# --- Сеть (подтверждено Agent 2 через Proxmox API, D6) ------------------------
+lab_subnet: 192.168.1.0/24
+lab_netmask: 24
+lab_gateway: 192.168.1.1
+lab_dns_servers:
+  - 192.168.1.1
+  - 8.8.8.8
+lab_timezone: Europe/Moscow
+lab_domain: lab.local
+
+# --- IPAM / VM (docs/INFRA.md §3; vmid — Proxmox, node — prox-01) --------------
+nodes:
+  kafka-1: { ip: 192.168.1.230, vmid: 9230, role: kafka, kafka_node_id: 1 }
+  kafka-2: { ip: 192.168.1.231, vmid: 9231, role: kafka, kafka_node_id: 2 }
+  kafka-3: { ip: 192.168.1.232, vmid: 9232, role: kafka, kafka_node_id: 3 }
+  rabbitmq-1: { ip: 192.168.1.233, vmid: 9233, role: rabbitmq }
+  rabbitmq-2: { ip: 192.168.1.234, vmid: 9234, role: rabbitmq }
+  rabbitmq-3: { ip: 192.168.1.235, vmid: 9235, role: rabbitmq }
+  redis-1: { ip: 192.168.1.237, vmid: 9237, role: redis, redis_role: primary }
+  redis-2: { ip: 192.168.1.238, vmid: 9238, role: redis, redis_role: replica }
+
+kafka_hosts:
+  - { host: kafka-1, ip: 192.168.1.230, node_id: 1 }
+  - { host: kafka-2, ip: 192.168.1.231, node_id: 2 }
+  - { host: kafka-3, ip: 192.168.1.232, node_id: 3 }
+rabbitmq_hosts:
+  - { host: rabbitmq-1, ip: 192.168.1.233 }
+  - { host: rabbitmq-2, ip: 192.168.1.234 }
+  - { host: rabbitmq-3, ip: 192.168.1.235 }
+redis_primary_host: 192.168.1.237
+redis_replica_host: 192.168.1.238
+
+# --- Порты сервисов (docs/INFRA.md §5) ----------------------------------------
+kafka_plaintext_port: 9092
+kafka_controller_port: 9093
+rabbitmq_amqp_port: 5672
+rabbitmq_mgmt_port: 15672
+rabbitmq_epmd_port: 4369
+rabbitmq_dist_port: 25672
+redis_port: 6379
+app_http_port: 8080
+ssh_port: 22
+ntp_port_udp: 123
+
+kafka_bootstrap_servers: "192.168.1.230:9092,192.168.1.231:9092,192.168.1.232:9092"
+kafka_controller_quorum_voters: "1@192.168.1.230:9093,2@192.168.1.231:9093,3@192.168.1.232:9093"
+rabbitmq_mgmt_url: "http://192.168.1.233:15672"
+
+# --- /etc/hosts (эталонный блок, docs/INFRA.md §10) — для роли common ---------
+hosts_entries:
+  - { ip: 192.168.1.230, name: kafka-1 }
+  - { ip: 192.168.1.231, name: kafka-2 }
+  - { ip: 192.168.1.232, name: kafka-3 }
+  - { ip: 192.168.1.233, name: rabbitmq-1 }
+  - { ip: 192.168.1.234, name: rabbitmq-2 }
+  - { ip: 192.168.1.235, name: rabbitmq-3 }
+  - { ip: 192.168.1.237, name: redis-1 }
+  - { ip: 192.168.1.238, name: redis-2 }
+
+# --- Пути ----------------------------------------------------------------------
+repo_root: /Users/pabelyakov/Projects/llm-test/kimi
+ssh_private_key_file: "{{ repo_root }}/Security/id_ed25519"
+ssh_public_key_file: "{{ repo_root }}/Security/id_ed25519.pub"
+
+# --- Замечания для Agent 3 (роль common) ---------------------------------------
+# * chrony: в Ubuntu 24.04 cloud image НЕ предустановлен (cloud-init vendor-data
+#   со списком packages в этом стенде недоступен — см. Terraform/README.md
+#   «Ограничение стенда») → устанавливает и настраивает роль common.
+# * timezone: выставлен Europe/Moscow однократно по SSH после деплоя
+#   (timedatectl); роль common обязана поддерживать его идемпотентно.
+# * /etc/hosts: cloud-init пишет только localhost/self → роль common рендерит
+#   полный блок из hosts_entries (все 8 узлов).

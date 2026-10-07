@@ -1,0 +1,32 @@
+# terraform.tfvars.example — ШАБЛОН (без секретов).
+# Скопируйте в terraform.tfvars (gitignored) и поправьте под свой стенд:
+#   cp Terraform/terraform.tfvars.example Terraform/terraform.tfvars
+#
+# СЕКРЕТЫ ЗДЕСЬ НЕ ХРАНЯТСЯ: API-токен Proxmox — только через env
+# (PM_API_URL / PM_API_TOKEN_ID / PM_API_TOKEN_SECRET / PM_TLS_INSECURE,
+#  источник — gitignored Security/proxmox.env).
+
+# --- Proxmox (подтверждено Agent 2 через API, D6) ---
+pve_node    = "prox-01"  # GET /api2/json/nodes
+pve_storage = "storage"  # GET /nodes/prox-01/storage: единственный активный (dir, ~1.8TiB avail, images+iso+import+snippets)
+pve_bridge  = "vmbr0"    # GET /nodes/prox-01/network: bridge, gateway 192.168.1.1
+
+# --- Сеть (D6) ---
+gateway     = "192.168.1.1" # подтверждён: атрибут gateway vmbr0 в API + ping
+netmask     = 24
+dns_servers = ["192.168.1.1", "8.8.8.8"]
+timezone    = "Europe/Moscow" # зафиксировано
+
+# --- Ресурсы VM (жёсткий лимит D8) ---
+vm_cores     = 2
+vm_memory_mb = 2048
+vm_disk_gb   = 40
+
+# --- Cloud-init / SSH ---
+vm_user                = "ubuntu"
+ssh_public_key_path    = "../Security/id_ed25519.pub"
+ssh_private_key_path   = "/absolute/path/to/Security/id_ed25519" # только ПУТЬ (для inventory), не содержимое
+
+# --- Базовый образ ---
+template_vmid         = 9000
+cloud_image_file_name = "noble-server-cloudimg-amd64.qcow2"  # content: import, расширение .qcow2 обязательно
