@@ -1,0 +1,24 @@
+# Secrets / env
+.env
+
+# SSH-ключи (приватные и публичные)
+security/deploy_key
+security/*.pub
+
+# Terraform
+.terraform/
+*.tfstate*
+*.tfvars
+
+# Ansible
+*.retry
+
+# Rust / Java build artifacts
+target/
+
+# IDE
+*.iml
+.idea/
+
+# macOS
+.DS_Store
