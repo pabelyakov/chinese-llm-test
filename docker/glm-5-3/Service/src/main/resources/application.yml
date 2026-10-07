@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: monolith
+  kafka:
+    bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 10000
+    consumer:
+      group-id: monolith-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.key.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: RECORD
+      concurrency: 3
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated
+    listener:
+      simple:
+        acknowledge-mode: AUTO
+        default-requeue-rejected: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  kafka-topic: messages.topic
+  rabbit-exchange: messages.exchange
+  rabbit-queue: messages.queue
+  rabbit-routing-key: messages.key
+  redis-key-prefix: "message:"
+  redis-ttl: 10m
+  flow-timeout: 15s
+  kafka-send-timeout: 5s

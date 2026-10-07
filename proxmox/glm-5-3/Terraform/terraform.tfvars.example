@@ -1,0 +1,16 @@
+# Пример заполнения. Скопировать в terraform.tfvars и вписать реальный секрет:
+#   cp terraform.tfvars.example terraform.tfvars
+# terraform.tfvars в git НЕ попадает (см. .gitignore, *.tfvars).
+
+pm_api_url      = "https://192.168.1.253:8006/"
+pm_api_token_id = "root@pam!terraform"
+pm_token_secret = "<UUID-секрет-токена>"
+
+target_node = "prox-01"
+storage_id  = "storage"
+bridge      = "vmbr0"
+gateway     = "192.168.1.1"
+dns         = "192.168.1.1"
+
+# Пароль deploy для первичного bootstrap passwordless sudo (см. README).
+deploy_password = "<пароль-не-короче-8-символов>"

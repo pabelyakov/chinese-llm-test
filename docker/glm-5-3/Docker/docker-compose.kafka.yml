@@ -1,0 +1,144 @@
+name: kafka-cluster
+
+# KRaft-кластер Apache Kafka из 3 нод (broker+controller, без Zookeeper).
+# Образ: apache/kafka:3.7.1 (официальный; env KAFKA_* автоматически конвертируются
+# в server.properties; CLI лежит в /opt/kafka/bin/*.sh).
+# 3.7.1, а не 3.7.0: в 3.7.0 wrapper образа писал в meta.properties битый
+# cluster.id=Some(...) (баг Option.toString) — 3.7.1 это чинит, env-контракт тот же.
+#
+# Сеть event-net — внешняя (создана манифестом RabbitMQ), НЕ вызывайте
+# `docker compose -f docker-compose.kafka.yml down` одновременно с rabbitmq down:
+# сначала kafka, потом rabbitmq (down удаляет сеть, если проект её создал).
+
+x-kafka-common: &kafka-common
+  image: apache/kafka:3.7.1
+  restart: unless-stopped
+  environment: &kafka-common-env
+    # ВАЖНО: образ apache/kafka читает именно CLUSTER_ID (не KAFKA_CLUSTER_ID);
+    # без него storage форматируется с дефолтным id из configureDefaults.
+    CLUSTER_ID: "dTLhZkYMQceNQs3r-eGw7Q"
+    KAFKA_PROCESS_ROLES: "broker,controller"
+    KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka-1:29093,2@kafka-2:29093,3@kafka-3:29093"
+    KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,HOST:PLAINTEXT"
+    KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+    KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+    KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
+    # Топики создаёт только kafka-init; авто-создание выключено, чтобы
+    # ошибки в именах топиков у приложения падали громко, а не молча.
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  networks:
+    - event-net
+
+services:
+  kafka-1:
+    <<: *kafka-common
+    container_name: kafka-1
+    hostname: kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      <<: *kafka-common-env
+      KAFKA_NODE_ID: "1"
+      KAFKA_LISTENERS: "INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,HOST://0.0.0.0:9092"
+      # HOST advertised = localhost:9092 — обязательно для клиентов с хоста (Spring Boot)
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka-1:29092,HOST://localhost:9092"
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-2:
+    <<: *kafka-common
+    container_name: kafka-2
+    hostname: kafka-2
+    ports:
+      - "9093:9092"
+    environment:
+      <<: *kafka-common-env
+      KAFKA_NODE_ID: "2"
+      KAFKA_LISTENERS: "INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,HOST://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka-2:29092,HOST://localhost:9093"
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-3:
+    <<: *kafka-common
+    container_name: kafka-3
+    hostname: kafka-3
+    ports:
+      - "9094:9092"
+    environment:
+      <<: *kafka-common-env
+      KAFKA_NODE_ID: "3"
+      KAFKA_LISTENERS: "INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,HOST://0.0.0.0:9092"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka-3:29092,HOST://localhost:9094"
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: создаёт контрактный топик после того, как все брокеры healthy.
+  kafka-init:
+    image: apache/kafka:3.7.1
+    container_name: kafka-init
+    restart: "no"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        BS="kafka-1:29092"
+        echo "[kafka-init] waiting for metadata quorum..."
+        for i in $$(seq 1 30); do
+          if /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$$BS" >/dev/null 2>&1; then
+            break
+          fi
+          sleep 2
+        done
+        echo "[kafka-init] creating topic messages.topic (partitions=3, rf=3, min.insync.replicas=2)"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" --create --if-not-exists \
+          --topic messages.topic --partitions 3 --replication-factor 3 \
+          --config min.insync.replicas=2
+        echo "[kafka-init] topic description:"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" --describe --topic messages.topic
+        echo "[kafka-init] done"
+    networks:
+      - event-net
+
+volumes:
+  kafka-1-data:
+    name: kafka-1-data
+  kafka-2-data:
+    name: kafka-2-data
+  kafka-3-data:
+    name: kafka-3-data
+
+networks:
+  event-net:
+    external: true
+    name: event-net

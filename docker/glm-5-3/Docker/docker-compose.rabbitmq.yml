@@ -1,0 +1,91 @@
+name: rabbitmq-cluster
+
+services:
+  rabbitmq-1:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-1
+    hostname: rabbitmq-1
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/usr/local/bin/cluster-entrypoint.sh", "seed"]
+    environment:
+      RABBITMQ_ERLANG_COOKIE: event-net-cluster-cookie
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-1-data:/var/lib/rabbitmq
+      - ./rabbitmq/cluster-entrypoint.sh:/usr/local/bin/cluster-entrypoint.sh:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - event-net
+
+  rabbitmq-2:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-2
+    hostname: rabbitmq-2
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/usr/local/bin/cluster-entrypoint.sh", "join"]
+    environment:
+      RABBITMQ_ERLANG_COOKIE: event-net-cluster-cookie
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq-2-data:/var/lib/rabbitmq
+      - ./rabbitmq/cluster-entrypoint.sh:/usr/local/bin/cluster-entrypoint.sh:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      - rabbitmq-1
+    networks:
+      - event-net
+
+  rabbitmq-3:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq-3
+    hostname: rabbitmq-3
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/usr/local/bin/cluster-entrypoint.sh", "join"]
+    environment:
+      RABBITMQ_ERLANG_COOKIE: event-net-cluster-cookie
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+    volumes:
+      - rabbitmq-3-data:/var/lib/rabbitmq
+      - ./rabbitmq/cluster-entrypoint.sh:/usr/local/bin/cluster-entrypoint.sh:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      - rabbitmq-1
+    networks:
+      - event-net
+
+volumes:
+  rabbitmq-1-data:
+    name: rabbitmq-1-data
+  rabbitmq-2-data:
+    name: rabbitmq-2-data
+  rabbitmq-3-data:
+    name: rabbitmq-3-data
+
+networks:
+  event-net:
+    name: event-net
+    driver: bridge

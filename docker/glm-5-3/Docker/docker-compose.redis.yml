@@ -1,0 +1,54 @@
+name: redis-replication
+
+services:
+  redis-master:
+    image: redis:7.2-alpine
+    container_name: redis-master
+    hostname: redis-master
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-master-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - event-net
+
+  redis-replica:
+    image: redis:7.2-alpine
+    container_name: redis-replica
+    hostname: redis-replica
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--replicaof", "redis-master", "6379", "--replica-read-only", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-replica-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    networks:
+      - event-net
+
+volumes:
+  redis-master-data:
+    name: redis-master-data
+  redis-replica-data:
+    name: redis-replica-data
+
+networks:
+  event-net:
+    external: true
+    name: event-net

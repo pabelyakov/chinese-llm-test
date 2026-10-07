@@ -4,7 +4,7 @@
 === ПРОЕКТ: Event-driven pipeline на Proxmox VE ===
 Рабочая директория: текущая. Структура: Terraform/, Ansible/, Service/, Security/.
 Proxmox: https://192.168.1.253:8006 (HTTPS self-signed — везде отключай TLS-верификацию: curl -k, tls_insecure_skip_verify).
-API token: id = "root@pam!terraform", secret = "a5098b71-f073-4dfb-ab10-499a0ca7f4ee".
+API token: id = "root@pam!terraform", secret = "secret".
 REST-заголовок: Authorization: PVEAPIToken=token
 Параметры VM (все без исключения): 2 vCPU, 2048 MB RAM, 40 GB disk, Debian 12 cloud image, cloud-init, статический IP, SSH-ключ из Security/id_ed25519_vm.pub, SSH-пользователь ops, password auth off.
 План адресов (пул 192.168.1.230–.240):

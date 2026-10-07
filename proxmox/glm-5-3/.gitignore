@@ -1,0 +1,52 @@
+# --- Секреты и ключи ---
+Security/ed25519
+Security/*.key
+*.pem
+*.p12
+
+# --- Terraform ---
+terraform.tfstate*
+.terraform/
+.terraform.lock.hcl
+crash.log
+*.tfvars
+!*.tfvars.example
+*.example.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# --- Промты проекта (содержат токен Proxmox — в git недопустимо) ---
+promts/
+
+# --- Логи ---
+*.log
+
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+
+# --- Node ---
+node_modules/
+
+# --- Прочее ---
+.DS_Store
+*.swp
+*.bak
+*~
