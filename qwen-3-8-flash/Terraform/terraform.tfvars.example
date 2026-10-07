@@ -1,0 +1,36 @@
+# Example Terraform variables for the Proxmox pipeline VMs.
+# NOTE: Proxmox credentials are NEVER placed here or in any committed file.
+#       Export them in the environment before running terraform:
+#
+#   export PM_API_ENDPOINT="https://192.168.1.253:8006"
+#   export PM_API_TOKEN_ID="root@pam!terraform=<your-token-id>"
+#   export PM_API_TOKEN_SECRET="<your-token-secret>"
+#   export PM_TLS_INSECURE="true"
+#
+# Copy this file to `terraform.tfvars` only if you want to override the
+# non-secret parameters below (terraform.tfvars is gitignored).
+
+node_name      = "prox-01"
+bridge         = "vmbr0"
+gateway        = "192.168.1.1"
+netmask_prefix = "24"
+nameservers    = ["192.168.1.1"]
+search_domain  = "pipeline.local"
+
+datastore_id   = "storage"
+image_url      = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+image_file_name = "debian-12-genericcloud-amd64.qcow2"
+
+vm_cpu_cores   = 2
+vm_cpu_sockets = 1
+vm_memory_mb   = 2048
+vm_disk_gb     = 40
+
+ssh_public_key_path = "../Security/id_ed25519_vm.pub"
+
+# If you prefer to feed the provider via variables instead of env vars,
+# uncomment and set them in your local (gitignored) terraform.tfvars:
+# pm_api_endpoint     = "https://192.168.1.253:8006"
+# pm_api_token_id     = "root@pam!terraform=..."
+# pm_api_token_secret = "..."
+# pm_tls_insecure     = true

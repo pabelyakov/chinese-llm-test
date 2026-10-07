@@ -1,0 +1,18 @@
+# Terraform working dir & state (never commit)
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Crash / plan artifacts
+crash.log
+crash.*.log
+*.tfplan
+
+# Real tfvars may contain overrides; keep only the .example in VCS
+terraform.tfvars
+terraform.tfvars.json
+*.tfvars
+*.tfvars.json
