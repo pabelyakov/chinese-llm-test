@@ -1,0 +1,22 @@
+# ============================================================================
+# Базовый compose-файл INFRA-слоя: объявляет общую bridge-сеть проекта.
+# Сервисов НЕТ намеренно — кластеры (kafka/rabbitmq/redis) и java-сервис
+# добавляются отдельными compose-файлами и подключаются к этой сети.
+#
+# ВАЖНО: `docker compose up` для файла без сервисов сеть НЕ создаёт.
+# Сеть создаётся явно командой (идемпотентно):
+#   docker network create event-driven-net 2>/dev/null || true
+# Этот файл фиксирует контракт сети (имя/driver) и валидируется через
+#   docker compose -f Docker/docker-compose.base.yml config
+# ============================================================================
+
+name: event-driven
+
+networks:
+  event-driven-net:
+    name: event-driven-net   # фактическое имя сети в docker (из NETWORK_NAME)
+    driver: bridge           # обычная bridge-сеть (не overlay/swarm)
+    external: false          # сеть НЕ внешняя для compose: управляется проектом
+    labels:
+      project: event-driven
+      managed-by: infra-agent

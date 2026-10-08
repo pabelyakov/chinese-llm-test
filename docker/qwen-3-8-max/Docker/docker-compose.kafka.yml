@@ -1,0 +1,182 @@
+# ============================================================================
+# Кластер Apache Kafka: 3 ноды в режиме KRaft (combined = broker + controller),
+# БЕЗ ZooKeeper. Образ: apache/kafka:3.9.2 (официальный, multi-arch: arm64/amd64,
+# скрипты в /opt/kafka/bin/, данные в /var/lib/kafka/data, пользователь appuser uid=1000).
+#
+# Запуск (из корня проекта):
+#   docker compose -f Docker/docker-compose.kafka.yml up -d
+# Остановка:            ... down        Полная очистка (с данными): ... down -v
+#
+# Переменные подставляются из Docker/.env (compose сам читает .env, т.к.
+# project directory = каталог compose-файла): KAFKA1_PORT/KAFKA2_PORT/KAFKA3_PORT,
+# NETWORK_NAME, COMPOSE_PROJECT_NAME.
+#
+# СХЕМА ПОРТОВ (у каждой ноды внутри контейнера ОДИНАКОВЫЕ порты — контейнеры
+# изолированы, поэтому конфликтов нет; различается только маппинг на хост):
+#   CONTROLLER      9093  — KRaft-кворум, ТОЛЬКО внутри event-driven-net
+#   PLAINTEXT       29092 — межброкерное общение + клиенты из контейнеров сети
+#   PLAINTEXT_HOST  9092  — внешний клиент с хоста (маппится на 9092/9093/9094)
+#
+#   kafka1  localhost:9092 -> kafka1:9092(PLAINTEXT_HOST)   advertised localhost:9092
+#   kafka2  localhost:9093 -> kafka2:9092(PLAINTEXT_HOST)   advertised localhost:9093
+#   kafka3  localhost:9094 -> kafka3:9092(PLAINTEXT_HOST)   advertised localhost:9094
+#
+# bootstrap.servers для монолита на хосте: localhost:9092,localhost:9093,localhost:9094
+#
+# KAFKA_ADVERTISED_LISTENERS уникален для каждой ноды (PLAINTEXT://kafkaN:29092 для
+# контейнеров сети + PLAINTEXT_HOST://localhost:909N для клиента на хосте) и задан
+# в секции services; остальные переменные общие (якорь x-kafka-env).
+# ============================================================================
+
+name: event-driven   # имя compose-проекта (совпадает с COMPOSE_PROJECT_NAME из .env)
+
+# ----------------------------------------------------------------------------
+# Общие переменные окружения Kafka (одинаковы для всех трёх нод).
+# Образ apache/kafka транслирует KAFKA_* -> server.properties:
+# префикс KAFKA_ отбрасывается, "_" -> "."  (KAFKA_NUM_PARTITIONS -> num.partitions).
+# CLUSTER_ID — исключение: это env для скрипта запуска (форматирование хранилища).
+# ----------------------------------------------------------------------------
+x-kafka-env: &kafka-env
+  # Единый на весь кластер идентификатор (base64 UUID, kafka-storage.sh random-uuid).
+  # ОДИНАКОВ у всех трёх нод — иначе ноды не образуют кластер ("Inconsistent cluster id").
+  CLUSTER_ID: c3qzPlyMQWSBOsHSOzuf-g
+  # KRaft: каждая нода одновременно брокер и контроллер (кворум 3, минимум 2 живых).
+  KAFKA_PROCESS_ROLES: broker,controller
+  # Кворум контроллеров: node.id@хост:порт. Порт 9093 — ВНУТРЕННИЙ контроллер-порт,
+  # не путать с host-портом 9093 (это внешний порт kafka2).
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
+  # Имя listener'а контроллера (должно присутствовать в listener.security.protocol.map).
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  # Какие порты слушаем внутри контейнера. 0.0.0.0 — чтобы слушать на всех интерфейсах.
+  # PLAINTEXT_HOST всегда на 9092 в контейнере; наружу он пробрасывается разным
+  # host-портом (9092/9093/9094) в секции ports каждой ноды.
+  KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9092
+  # Маппинг "имя listener'а -> протокол безопасности" (без SASL/SSL для локальной среды).
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  # По какому listener'у брокеры общаются между собой (репликация, кворум-метаданные).
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  # Каталог данных: смонтирован в named volume kafkaN-data. ВАЖНО переопределить,
+  # иначе образ использует дефолтный /tmp/kraft-combined-logs и данные теряются.
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+  # --- Факторы репликации (контракт: RF=3, min.insync.replicas=2) ---------------
+  # Топик оффсетов консьюмер-групп реплицируется на все 3 брокера.
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+  # Внутренний топик транзакций: 3 реплики, минимум 2 в ISR для записи.
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+  # Сколько реплик обязаны быть в синхроне при acks=all. 2 из 3 — кластер
+  # переживает остановку одной ноды без ошибок продюсера.
+  KAFKA_MIN_INSYNC_REPLICAS: "2"
+  # Дефолты для создаваемых топиков: RF=3, 3 партиции (по контракту проекта).
+  KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
+  KAFKA_NUM_PARTITIONS: "3"
+  # Автосоздание топиков включено: удобно для smoke-тестов и локальной разработки.
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+  # Не ждём полного набора участников группы при первом старте — smoke-тест
+  # produce/consume проходит мгновенно вместо 3 секунд задержки.
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  # Heap на ноду: 3 брокера локально — держим потребление памяти умеренным.
+  KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+
+# ----------------------------------------------------------------------------
+# Общие настройки сервиса: образ, healthcheck, сеть, политика перезапуска.
+# ----------------------------------------------------------------------------
+x-kafka-common: &kafka-common
+  image: apache/kafka:3.9.2   # официальный образ, KRaft из коробки, arm64-native
+  restart: unless-stopped     # переживаем перезапуск docker / сбой ноды
+  networks:
+    - event-driven-net        # общая сеть проекта (external, создана INFRA-агентом)
+  healthcheck:
+    # Реальная проверка готовности брокера: отвечаем на ApiVersions по
+    # внутреннему listener'у (localhost:29092 внутри контейнера).
+    test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 >/dev/null 2>&1"]
+    interval: 10s             # как часто опрашиваем
+    timeout: 20s              # скрипт JVM стартует не мгновенно — запас времени
+    retries: 30               # до 30 попыток, чтобы пережить формирование кворума
+    start_period: 30s         # первые 30с провалы healthcheck не считаются ошибкой
+
+services:
+  # ==========================================================================
+  # НОДА 1 (node.id=1). Внешний порт хоста: KAFKA1_PORT=9092.
+  # ==========================================================================
+  kafka1:
+    <<: *kafka-common
+    container_name: kafka1        # фиксированное имя для `docker exec kafka1 ...`
+    hostname: kafka1              # DNS-имя в event-driven-net = имени listener'а
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "1"          # id брокера/контроллера, обязан совпадать с voters
+      # PLAINTEXT — для контейнеров, PLAINTEXT_HOST — для клиента на хосте.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:${KAFKA1_PORT}
+    ports:
+      # host:container — 9092 хоста -> 9092 контейнера (PLAINTEXT_HOST)
+      - "${KAFKA1_PORT}:9092"
+    volumes:
+      - kafka1-data:/var/lib/kafka/data   # сегменты логов и метаданные KRaft
+
+  # ==========================================================================
+  # НОДА 2 (node.id=2). Внешний порт хоста: KAFKA2_PORT=9093.
+  # depends_on: service_started (НЕ healthy!) — одна нода не может сформировать
+  # кворум 3-х контроллеров, поэтому kafka1+kafka2 поднимаются параллельно.
+  # ==========================================================================
+  kafka2:
+    <<: *kafka-common
+    container_name: kafka2
+    hostname: kafka2
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "2"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29092,PLAINTEXT_HOST://localhost:${KAFKA2_PORT}
+    ports:
+      # 9093 хоста -> 9092 контейнера (9093 внутри контейнера занят контроллером)
+      - "${KAFKA2_PORT}:9092"
+    volumes:
+      - kafka2-data:/var/lib/kafka/data
+    depends_on:
+      kafka1:
+        condition: service_started
+
+  # ==========================================================================
+  # НОДА 3 (node.id=3). Внешний порт хоста: KAFKA3_PORT=9094.
+  # Стартует ПОСЛЕ того, как kafka1 и kafka2 стали healthy (кворум уже собран) —
+  # наглядная проверка condition: service_healthy без взаимной блокировки.
+  # ==========================================================================
+  kafka3:
+    <<: *kafka-common
+    container_name: kafka3
+    hostname: kafka3
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "3"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:29092,PLAINTEXT_HOST://localhost:${KAFKA3_PORT}
+    ports:
+      - "${KAFKA3_PORT}:9092"
+    volumes:
+      - kafka3-data:/var/lib/kafka/data
+    depends_on:
+      kafka1:
+        condition: service_healthy   # ждём реальный ответ брокера, а не просто старт
+      kafka2:
+        condition: service_healthy
+
+# ----------------------------------------------------------------------------
+# Named volumes: данные каждой ноды изолированы и переживают down/up.
+# Права: каталог /var/lib/kafka/data в образе принадлежит appuser (uid/gid 1000),
+# docker наследует владельца при первом создании volume — chmod не требуется.
+# ----------------------------------------------------------------------------
+volumes:
+  kafka1-data:
+    name: event-driven-kafka1-data
+  kafka2-data:
+    name: event-driven-kafka2-data
+  kafka3-data:
+    name: event-driven-kafka3-data
+
+# ----------------------------------------------------------------------------
+# Общая сеть проекта создана INFRA-агентом (docker network create event-driven-net),
+# поэтому external: true — compose её не создаёт и не удаляет при down.
+# ----------------------------------------------------------------------------
+networks:
+  event-driven-net:
+    external: true
+    name: ${NETWORK_NAME}

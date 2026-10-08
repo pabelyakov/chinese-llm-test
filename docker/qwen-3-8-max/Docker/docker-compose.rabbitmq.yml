@@ -1,0 +1,153 @@
+# ============================================================================
+# RabbitMQ: кластер из 3 нод (rabbit1 = seed, rabbit2/rabbit3 = joiners).
+#
+# Образ: rabbitmq:3.13-management — стабильная линейка 3.13.x (quorum queues
+# в production-ready виде, плагин management + rabbitmqadmin v2 из коробки,
+# поддержка linux/arm64 и linux/amd64). Выбор зафиксирован контрактом проекта.
+#
+# Запуск (из корня проекта):
+#   docker compose -f Docker/docker-compose.rabbitmq.yml up -d
+# Предусловия: сеть event-driven-net создана (INFRA-агент), Docker/.env на месте.
+#
+# Кластеризация:
+#   * ОДИНАКОВЫЙ RABBITMQ_ERLANG_COOKIE на всех нодах (из RABBITMQ_COOKIE в .env)
+#     — без совпадения cookie ноды отвергают друг друга;
+#   * фиксированные RABBITMQ_NODENAME=rabbit@rabbitN + hostname=rabbitN;
+#   * обёртки ./rabbitmq/rabbitmq-cluster-{seed,join} (монтируются в
+#     /usr/local/bin/) выполняют join/idempotent-bootstrap. Имя команды
+#     начинается с "rabbitmq" — docker-entrypoint.sh образа сам понижает
+#     привилегии до пользователя rabbitmq (gosu), это поддерживаемый путь;
+#   * пользователь pipeline и топология (exchange/queue/binding) создаются
+#     seed-обёрткой на rabbit1 после старта (идемпотентно).
+# ============================================================================
+
+name: event-driven
+
+networks:
+  # Общая bridge-сеть проекта: создана INFRA-агентом, объявляем как external
+  event-driven-net:
+    external: true
+    name: event-driven-net
+
+volumes:
+  # Named volumes под данные (mnesia) каждой ноды: /var/lib/rabbitmq
+  rabbit1-data:
+  rabbit2-data:
+  rabbit3-data:
+
+# Общие переменные окружения нод. Значения — из Docker/.env (контракт INFRA).
+# MQ_* — внутренние имена обёрток (нейтральные, чтобы не пересекаться с
+# нативными переменными RABBITMQ_*, которые читает сам сервер).
+x-rabbit-env: &rabbit-env
+  # Единый Erlang cookie кластера (критично: у всех трёх нод одинаковый)
+  RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_COOKIE}
+  # Seed-нода, к которой присоединяются rabbit2/rabbit3
+  MQ_SEED: rabbit@rabbit1
+  # Учётка приложения и контрактная топология (использует seed-обёртка)
+  MQ_USER: ${RABBITMQ_USER}
+  MQ_PASSWORD: ${RABBITMQ_PASSWORD}
+  MQ_EXCHANGE: ${RABBIT_EXCHANGE}
+  MQ_QUEUE: ${RABBIT_QUEUE}
+  MQ_ROUTING_KEY: ${RABBIT_ROUTING_KEY}
+
+# Общие параметры сервисов кластера
+x-rabbit-common: &rabbit-common
+  image: rabbitmq:3.13-management
+  restart: unless-stopped
+  networks:
+    - event-driven-net
+  # Внутри сети event-driven-net доступны (НЕ публикуются на хост):
+  #   4369  — epmd (обнаружение нод),
+  #   5672  — AMQP,
+  #   15672 — management HTTP API / UI,
+  #   25672 — Erlang distribution (межузловой обмен кластера).
+  expose:
+    - "4369"
+    - "5672"
+    - "15672"
+    - "25672"
+  # Корректный останов RabbitMQ может занять больше дефолтных 10 секунд
+  stop_grace_period: 30s
+
+services:
+  # --------------------------------------------------------------------------
+  # Нода 1 — SEED: точка входа кластера. Создаёт пользователя pipeline,
+  # объявляет exchange/queue(quorum)/binding, ждёт присоединения rabbit2/3.
+  # --------------------------------------------------------------------------
+  rabbit1:
+    <<: *rabbit-common
+    container_name: rabbit1
+    hostname: rabbit1                     # имя ноды rabbit@rabbit1 следует за hostname
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit1   # фиксированное имя ноды (контракт кластера)
+    command: ["rabbitmq-cluster-seed"]    # обёртка: bootstrap + exec rabbitmq-server
+    volumes:
+      - rabbit1-data:/var/lib/rabbitmq    # данные ноды (named volume)
+      - ./rabbitmq/rabbitmq-cluster-seed:/usr/local/bin/rabbitmq-cluster-seed:ro
+    ports:
+      - "${RABBIT1_PORT}:5672"            # AMQP для хоста: localhost:5672
+      - "${RABBIT1_MGMT_PORT}:15672"      # management UI: http://localhost:15672
+    healthcheck:
+      # ping — Erlang-нода отвечает; check_running — приложение полностью
+      # поднято (rabbit1 — точка входа, от неё зависят rabbit2/rabbit3)
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_running"]
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  # Нода 2 — joiner: ждёт healthy-состояния rabbit1 (depends_on), затем
+  # retry-loop по seed-ноде и join_cluster (идемпотентно).
+  # --------------------------------------------------------------------------
+  rabbit2:
+    <<: *rabbit-common
+    container_name: rabbit2
+    hostname: rabbit2
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit2
+    command: ["rabbitmq-cluster-join"]
+    depends_on:
+      rabbit1:
+        condition: service_healthy        # анти-race: старт только после rabbit1
+    volumes:
+      - rabbit2-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq-cluster-join:/usr/local/bin/rabbitmq-cluster-join:ro
+    ports:
+      - "${RABBIT2_PORT}:5672"            # AMQP: localhost:5673
+      - "${RABBIT2_MGMT_PORT}:15672"      # UI: http://localhost:15673
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 30s
+
+  # --------------------------------------------------------------------------
+  # Нода 3 — joiner, идентична rabbit2 (порты 5674/15674).
+  # --------------------------------------------------------------------------
+  rabbit3:
+    <<: *rabbit-common
+    container_name: rabbit3
+    hostname: rabbit3
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit3
+    command: ["rabbitmq-cluster-join"]
+    depends_on:
+      rabbit1:
+        condition: service_healthy
+    volumes:
+      - rabbit3-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq-cluster-join:/usr/local/bin/rabbitmq-cluster-join:ro
+    ports:
+      - "${RABBIT3_PORT}:5672"            # AMQP: localhost:5674
+      - "${RABBIT3_MGMT_PORT}:15672"      # UI: http://localhost:15674
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 15s
+      retries: 12
+      start_period: 30s

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# ============================================================================
+# rabbitmq-cluster-join — обёртка присоединяемых нод (сервисы rabbit2/rabbit3).
+#
+# Файл: Docker/rabbitmq/rabbitmq-cluster-join; монтируется в контейнер как
+#   /usr/local/bin/rabbitmq-cluster-join и запускается через `command`.
+#   Имя начинается с "rabbitmq" — docker-entrypoint.sh образа сам понижает
+#   привилегии до пользователя rabbitmq (gosu).
+#
+# Схема работы (идемпотентна — повторный `up -d`/restart не ломает кластер):
+#   1. rabbitmq-server — в переднем плане через exec (graceful shutdown);
+#   2. фоновый bootstrap:
+#      a. ждёт полный старт локального приложения (check_running);
+#      b. если нода УЖЕ в кластере с SEED — ничего не делает;
+#      c. иначе ждёт доступность SEED (MQ_SEED=rabbit@rabbit1): retry-loop
+#         30 попыток x 3s — лечение классического race «rabbit2 стартовал
+#         раньше rabbit1»;
+#      d. если SEED известен из mnesia (рестарт бывшего члена кластера) —
+#         ждёт автоматический rejoin (~30s), чтобы НЕ делать reset и не
+#         уничтожать локальную реплику quorum-очереди;
+#      e. иначе штатная процедура: rabbitmqctl stop_app -> reset ->
+#         join_cluster SEED -> start_app.
+# ============================================================================
+set -uo pipefail
+
+NODE="${RABBITMQ_NODENAME:-rabbit@$(hostname -s)}"
+SEED="${MQ_SEED:-rabbit@rabbit1}"
+
+log() { echo "[join ${NODE}] $*"; }
+
+# SEED среди RUNNING-нод кластера этой ноды (т.е. мы уже в общем кластере)?
+in_cluster_with_seed() {
+  rabbitmqctl eval "lists:member(${SEED}, rabbit_nodes:list_running())." 2>/dev/null \
+    | tail -1 | grep -qx 'true'
+}
+
+# SEED известна по mnesia как член кластера (даже если сейчас недоступна)?
+# True после рестарта — RabbitMQ переподключится сам, reset тогда не нужен.
+knows_seed() {
+  rabbitmqctl eval "lists:member(${SEED}, rabbit_nodes:all())." 2>/dev/null \
+    | tail -1 | grep -qx 'true'
+}
+
+(
+  # a) ждём полный старт локального приложения
+  log "bootstrap: waiting for node to be fully running..."
+  until rabbitmq-diagnostics -q check_running >/dev/null 2>&1; do sleep 2; done
+  log "bootstrap: node is running"
+
+  if in_cluster_with_seed; then
+    # b) повторный запуск: нода уже в кластере (данные в named volume)
+    log "bootstrap: already clustered with ${SEED} — nothing to do (idempotent)"
+  else
+    # c) ждём SEED: 30 попыток x 3s (до ~90 секунд)
+    seed_up=0
+    for i in $(seq 1 30); do
+      if rabbitmq-diagnostics -n "${SEED}" -q ping >/dev/null 2>&1; then
+        seed_up=1; break
+      fi
+      log "bootstrap: waiting for ${SEED}... attempt ${i}/30"
+      sleep 3
+    done
+
+    if [ "${seed_up}" -eq 1 ]; then
+      # d) бывший член кластера: даём шанс автоматическому rejoin
+      if knows_seed; then
+        log "bootstrap: mnesia knows ${SEED} — waiting for auto-rejoin (up to ~30s)..."
+        for _ in $(seq 1 10); do
+          in_cluster_with_seed && break
+          sleep 3
+        done
+      fi
+
+      if in_cluster_with_seed; then
+        log "bootstrap: rejoined ${SEED} automatically — no reset needed"
+      else
+        # e) свежая нода: штатное присоединение.
+        #    reset ОБЯЗАТЕЛЕН перед join_cluster (иначе «node not fresh»).
+        log "bootstrap: joining ${SEED} (stop_app -> reset -> join_cluster -> start_app)..."
+        if rabbitmqctl stop_app \
+          && rabbitmqctl reset \
+          && rabbitmqctl join_cluster "${SEED}" \
+          && rabbitmqctl start_app; then
+          log "bootstrap: joined cluster ${SEED}"
+        else
+          log "bootstrap: WARN — join failed, node stays standalone"
+        fi
+      fi
+    else
+      log "bootstrap: WARN — ${SEED} unreachable after ~90s, staying standalone"
+    fi
+  fi
+  log "bootstrap: complete"
+) &
+
+# --- сервер в переднем плане ------------------------------------------------
+log "starting rabbitmq-server (exec)..."
+exec rabbitmq-server

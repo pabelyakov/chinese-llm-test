@@ -1,0 +1,106 @@
+# ============================================================================
+# Redis: master + replica (асинхронная репликация). НЕ Redis Cluster.
+#
+# Архитектурное ограничение: настоящий Redis Cluster (--cluster-enabled yes)
+# требует МИНИМУМ 3 мастер-ноды (16384 слота, кворум мастеров для failover).
+# При 2 нодах корректная топология — master + replica:
+#   - монолит ВСЕГДА пишет и читает master  -> localhost:6379
+#   - replica (localhost:6380) — для чтения и отработки восстановления
+# Путь развития: добавить 3-ю ноду -> cluster mode. Подробности и failover:
+#   Docker/redis/README.md
+#
+# Запуск (из корня репозитория):
+#   docker compose -f Docker/docker-compose.redis.yml up -d
+# Останов:
+#   docker compose -f Docker/docker-compose.redis.yml down
+# Полный сброс (с удалением volume с данными):
+#   docker compose -f Docker/docker-compose.redis.yml down -v
+#
+# Переменные (REDIS_PASSWORD, REDIS_MASTER_PORT, REDIS_REPLICA_PORT) берутся
+# из Docker/.env — подхватывается автоматически (project dir = Docker/).
+# Пароль НЕ хардкодится.
+# ============================================================================
+
+name: event-driven
+
+services:
+  # --------------------------------------------------------------------------
+  # MASTER: единственная точка записи. appendonly yes (AOF) — durability:
+  # результаты пайплайна (pipeline:result:{correlationId}) не теряются при
+  # рестарте контейнера. maxmemory-policy noeviction — ключи пайплайна не
+  # должны вытесняться молча (лучше явная ошибка записи OOM, чем потеря
+  # результата; обоснование в README).
+  # --------------------------------------------------------------------------
+  redis-master:
+    image: redis:7-alpine                  # мультиарх (arm64/amd64), фактически Redis 7.4.x
+    container_name: redis-master
+    hostname: redis-master
+    restart: unless-stopped
+    command: >-
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+      --maxmemory-policy noeviction
+    environment:
+      # redis-cli внутри контейнера (healthcheck, диагностика) берёт пароль
+      # из этой переменной: не нужен -a и нет warning'ов в выводе.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_MASTER_PORT:-6379}:6379"  # хост 6379 -> контейнер 6379
+    volumes:
+      - redis-master-data:/data            # персистентность AOF/RDB
+    networks:
+      - event-driven-net
+    healthcheck:
+      # PING авторизуется через REDISCLI_AUTH из env контейнера
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # --------------------------------------------------------------------------
+  # REPLICA: асинхронная реплика мастера (--replicaof redis-master 6379).
+  # masterauth = тот же пароль (на мастере включён requirepass).
+  # Read-only по умолчанию (replica-serve-stale-data yes — отдаёт данные даже
+  # при временной потере связи с мастером). Ручной failover — в README.
+  # --------------------------------------------------------------------------
+  redis-replica:
+    image: redis:7-alpine
+    container_name: redis-replica
+    hostname: redis-replica
+    restart: unless-stopped
+    command: >-
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --masterauth ${REDIS_PASSWORD}
+      --replicaof redis-master 6379
+      --maxmemory-policy noeviction
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_REPLICA_PORT:-6380}:6379" # хост 6380 -> контейнер 6379
+    volumes:
+      - redis-replica-data:/data
+    networks:
+      - event-driven-net
+    depends_on:
+      redis-master:
+        condition: service_healthy         # старт реплики только после healthy мастера
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+# Общая сеть проекта создана INFRA-агентом: docker network create event-driven-net
+networks:
+  event-driven-net:
+    external: true
+    name: event-driven-net
+
+# Named volumes для данных обеих нод (переживают down/up, удаляются через down -v)
+volumes:
+  redis-master-data:
+  redis-replica-data:

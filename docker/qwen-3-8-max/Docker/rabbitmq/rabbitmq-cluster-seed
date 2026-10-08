@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# ============================================================================
+# rabbitmq-cluster-seed — обёртка точки входа кластера (сервис rabbit1).
+#
+# Файл: Docker/rabbitmq/rabbitmq-cluster-seed; монтируется в контейнер как
+#   /usr/local/bin/rabbitmq-cluster-seed и запускается через `command`
+#   compose-сервиса rabbit1. Имя начинается с "rabbitmq" — docker-entrypoint.sh
+#   образа при таком условии сам выполняет gosu rabbitmq (поддерживаемый путь),
+#   поэтому скрипт работает от пользователя rabbitmq.
+#
+# Схема работы (идемпотентна — безопасна при каждом рестарте контейнера):
+#   1. rabbitmq-server запускается В ПЕРЕДНЕМ ПЛАНЕ через exec — сохраняется
+#      семантика PID 1 и корректный graceful shutdown по docker stop (SIGTERM);
+#   2. параллельно фоновый bootstrap-процесс:
+#      a. ждёт полного старта приложения (rabbitmq-diagnostics check_running);
+#      b. создаёт/обновляет пользователя MQ_USER (MQ_PASSWORD из Docker/.env):
+#         add_user либо change_password, тег administrator, полные права на /;
+#         guest не трогаем — он остаётся для management UI;
+#      c. объявляет контрактную топологию через rabbitmqadmin v2 (HTTP
+#         management API 127.0.0.1:15672): topic-exchange MQ_EXCHANGE
+#         (durable) -> QUORUM-очередь MQ_QUEUE (durable) c binding-ом на
+#         MQ_ROUTING_KEY. Повторный declare с теми же параметрами = no-op;
+#      d. ждёт полный кластер (3 running nodes, до ~90 с) и добавляет
+#         rabbit2/rabbit3 в члены quorum-очереди (rabbitmq-queues add_member —
+#         страховка; при объявлении на полном кластере ноды входят сами).
+# ============================================================================
+set -uo pipefail
+
+# Обязательные переменные (задаются в docker-compose.rabbitmq.yml из Docker/.env)
+NODE="${RABBITMQ_NODENAME:-rabbit@$(hostname -s)}"
+: "${MQ_USER:?MQ_USER is not set}"
+: "${MQ_PASSWORD:?MQ_PASSWORD is not set}"
+: "${MQ_EXCHANGE:?MQ_EXCHANGE is not set}"
+: "${MQ_QUEUE:?MQ_QUEUE is not set}"
+: "${MQ_ROUTING_KEY:?MQ_ROUTING_KEY is not set}"
+
+log() { echo "[seed ${NODE}] $*"; }
+
+# --- фоновый bootstrap (не блокирует старт сервера) -------------------------
+(
+  # a) ждём, пока приложение полностью поднято (check_running строже ping)
+  log "bootstrap: waiting for node to be fully running..."
+  until rabbitmq-diagnostics -q check_running >/dev/null 2>&1; do sleep 2; done
+  log "bootstrap: node is running"
+
+  # b) пользователь приложения — идемпотентно: если уже есть, обновляем пароль
+  if rabbitmqctl list_users 2>/dev/null | awk '{print $1}' | grep -qx "${MQ_USER}"; then
+    rabbitmqctl change_password "${MQ_USER}" "${MQ_PASSWORD}" >/dev/null
+    log "bootstrap: user ${MQ_USER} already exists — password synced"
+  else
+    rabbitmqctl add_user "${MQ_USER}" "${MQ_PASSWORD}" >/dev/null
+    log "bootstrap: user ${MQ_USER} created"
+  fi
+  rabbitmqctl set_user_tags "${MQ_USER}" administrator >/dev/null
+  rabbitmqctl set_permissions -p / "${MQ_USER}" ".*" ".*" ".*" >/dev/null
+  log "bootstrap: user ${MQ_USER} tagged administrator, full permissions on vhost /"
+
+  # c) контрактная топология. rabbitmqadmin (v2, есть в -management образе)
+  #    ходит в HTTP API локально. Ретраи — на случай, если management-плагин
+  #    ещё не поднялся в момент первого вызова.
+  ADMIN=(rabbitmqadmin --host 127.0.0.1 --port 15672
+         --username "${MQ_USER}" --password "${MQ_PASSWORD}" --vhost /)
+  declare_topology() {
+    local ok=1
+    "${ADMIN[@]}" declare exchange "name=${MQ_EXCHANGE}" type=topic durable=true \
+      || ok=0
+    # x-queue-type=quorum — очередь QUORUM (реплицируемая через Raft),
+    # политика ha-all для таких очередей НЕ нужна и не применяется
+    "${ADMIN[@]}" declare queue "name=${MQ_QUEUE}" durable=true \
+      'arguments={"x-queue-type":"quorum"}' \
+      || ok=0
+    "${ADMIN[@]}" declare binding "source=${MQ_EXCHANGE}" \
+      "destination=${MQ_QUEUE}" "routing_key=${MQ_ROUTING_KEY}" \
+      || ok=0
+    [ "${ok}" = 1 ]
+  }
+  for attempt in $(seq 1 10); do
+    if declare_topology; then
+      log "bootstrap: topology OK — exchange ${MQ_EXCHANGE} (topic,durable) -> queue ${MQ_QUEUE} (quorum,durable) [rk=${MQ_ROUTING_KEY}]"
+      break
+    fi
+    log "bootstrap: topology attempt ${attempt}/10 failed, retrying in 3s..."
+    sleep 3
+  done
+
+  # d) ждём, пока rabbit2/rabbit3 присоединятся к кластеру (их обёртки
+  #    делают join_cluster на эту ноду). 30 попыток x 3s = до ~90 секунд.
+  log "bootstrap: waiting for full cluster (3 running nodes)..."
+  for _ in $(seq 1 30); do
+    N="$(rabbitmqctl eval 'length(rabbit_nodes:list_running()).' 2>/dev/null | tail -1 || echo 0)"
+    if [[ "${N}" =~ ^[0-9]+$ ]] && [ "${N}" -ge 3 ]; then break; fi
+    sleep 3
+  done
+  log "bootstrap: running nodes now: $(rabbitmqctl eval 'rabbit_nodes:list_running().' 2>/dev/null | tail -1 || echo unknown)"
+
+  # Членство quorum-очереди: добавляем пиров явно (страховка для сценария
+  # «очередь объявлена до присоединения нод»). Ошибки «уже член» игнорируем.
+  for peer in rabbit@rabbit2 rabbit@rabbit3; do
+    rabbitmq-queues add_member "${MQ_QUEUE}" "${peer}" >/dev/null 2>&1 || true
+  done
+  log "bootstrap: complete"
+) &
+
+# --- сервер в переднем плане: exec сохраняет PID1-семантику для сигналов ----
+log "starting rabbitmq-server (exec)..."
+exec rabbitmq-server

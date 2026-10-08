@@ -1,0 +1,73 @@
+server:
+  port: ${APP_PORT:8080}
+
+spring:
+  application:
+    name: pipeline-service
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092,localhost:9093,localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        max.block.ms: 5000
+        delivery.timeout.ms: 10000
+        request.timeout.ms: 5000
+    consumer:
+      group-id: pipeline-service-group
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:pipeline}
+    password: ${RABBITMQ_PASSWORD:pipeline-secret}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 500ms
+          max-attempts: 3
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis-secret}
+      timeout: 3s
+
+pipeline:
+  kafka-topic: ${KAFKA_TOPIC:pipeline.inbound}
+  rabbit-exchange: ${RABBIT_EXCHANGE:pipeline.exchange}
+  rabbit-queue: ${RABBIT_QUEUE:pipeline.stage2.queue}
+  rabbit-routing-key: ${RABBIT_ROUTING_KEY:stage.rabbit}
+  redis-result-prefix: ${REDIS_RESULT_KEY_PREFIX:pipeline:result:}
+  redis-completed-channel: ${REDIS_COMPLETED_CHANNEL:pipeline:completed}
+  result-ttl-seconds: ${REDIS_RESULT_TTL_SECONDS:60}
+  timeout-seconds: ${PIPELINE_TIMEOUT_SECONDS:15}
+  poll-interval-ms: ${PIPELINE_POLL_INTERVAL_MS:100}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  health:
+    kafka:
+      enabled: true
+    rabbit:
+      enabled: true
+    redis:
+      enabled: true
+
+logging:
+  level:
+    com.example.pipeline: INFO
